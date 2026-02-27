@@ -224,7 +224,8 @@ fn format_node_label(node: &GraphNode) -> String {
         label.clone()
     } else {
         let summary = if node.content_summary.len() > 80 {
-            format!("{}...", &node.content_summary[..80])
+            let end = node.content_summary.floor_char_boundary(80);
+            format!("{}...", &node.content_summary[..end])
         } else {
             node.content_summary.clone()
         };
