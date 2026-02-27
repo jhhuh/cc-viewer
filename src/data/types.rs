@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A parsed JSONL record from Claude Code session logs.
 #[derive(Debug, Clone)]
@@ -13,6 +13,8 @@ pub struct Record {
     pub content_summary: String,
     pub tool_name: Option<String>,
     pub tool_use_id: Option<String>,
+    pub cwd: Option<String>,
+    pub slug: Option<String>,
     pub raw: serde_json::Value,
 }
 
@@ -49,6 +51,18 @@ impl NodeKind {
             NodeKind::Other =>       [0.40, 0.40, 0.40, 1.0],
         }
     }
+
+    pub fn text_color(&self) -> [u8; 4] {
+        match self {
+            NodeKind::User =>       [220, 230, 255, 255],
+            NodeKind::Assistant =>   [220, 255, 220, 255],
+            NodeKind::ToolUse =>     [255, 240, 200, 255],
+            NodeKind::ToolResult =>  [255, 230, 200, 255],
+            NodeKind::Progress =>    [200, 200, 200, 255],
+            NodeKind::Subagent =>    [240, 210, 240, 255],
+            NodeKind::Other =>       [200, 200, 200, 255],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +94,8 @@ pub struct GraphEdge {
 #[derive(Debug, Clone, Default)]
 pub struct SessionGraph {
     pub session_id: String,
+    pub project_name: String,
+    pub slug: String,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     /// uuid -> index in nodes
@@ -98,6 +114,9 @@ pub struct AppState {
     pub camera: CameraState,
     // Animation
     pub zoom_target: Option<ZoomTarget>,
+    // Grouping
+    pub expanded_groups: HashSet<String>,
+    pub generation: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +134,54 @@ pub struct ZoomTarget {
     pub progress: f32,
 }
 
+/// Lightweight node data for the render path — no heavy serde_json::Value.
+#[derive(Debug, Clone)]
+pub struct RenderNode {
+    pub id: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: [f32; 4],
+    pub text_color: [u8; 4],
+    pub label: String,
+    pub is_selected: bool,
+    pub is_group: bool,
+    pub last_update_time: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RenderEdge {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+}
+
+/// Snapshot of renderable data — cheap to clone for the GPU callback.
+#[derive(Debug, Clone)]
+pub struct RenderSnapshot {
+    pub nodes: Vec<RenderNode>,
+    pub edges: Vec<RenderEdge>,
+    pub camera: CameraState,
+    pub generation: u64,
+}
+
+impl Default for RenderSnapshot {
+    fn default() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            camera: CameraState {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                zoom: 1.0,
+            },
+            generation: 0,
+        }
+    }
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -128,6 +195,8 @@ impl Default for AppState {
                 zoom: 1.0,
             },
             zoom_target: None,
+            expanded_groups: HashSet::new(),
+            generation: 0,
         }
     }
 }

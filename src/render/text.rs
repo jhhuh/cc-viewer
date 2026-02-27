@@ -3,7 +3,7 @@ use glyphon::{
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport,
 };
 
-use crate::data::types::{AppState, GraphNode, NodeKind};
+use crate::data::types::RenderSnapshot;
 
 /// Persistent glyphon state stored in egui_wgpu's CallbackResources.
 pub struct GlyphonState {
@@ -67,7 +67,7 @@ pub fn prepare_text(
     glyphon: &mut GlyphonState,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    app_state: &AppState,
+    snapshot: &RenderSnapshot,
     viewport_w: f32,
     viewport_h: f32,
 ) {
@@ -79,21 +79,23 @@ pub fn prepare_text(
         },
     );
 
-    let graph = match app_state
-        .active_session
-        .as_ref()
-        .and_then(|s| app_state.sessions.get(s))
-    {
-        Some(g) => g,
-        None => {
-            glyphon.buffers.clear();
-            return;
-        }
-    };
+    if snapshot.nodes.is_empty() {
+        glyphon.buffers.clear();
+        let _ = glyphon.text_renderer.prepare(
+            device,
+            queue,
+            &mut glyphon.font_system,
+            &mut glyphon.atlas,
+            &glyphon.viewport,
+            Vec::<TextArea>::new(),
+            &mut glyphon.swash_cache,
+        );
+        return;
+    }
 
-    let zoom = app_state.camera.zoom;
-    let offset_x = app_state.camera.offset_x;
-    let offset_y = app_state.camera.offset_y;
+    let zoom = snapshot.camera.zoom;
+    let offset_x = snapshot.camera.offset_x;
+    let offset_y = snapshot.camera.offset_y;
 
     // Skip text at very small zoom
     if zoom < 0.15 {
@@ -118,7 +120,7 @@ pub fn prepare_text(
     // Phase 1: Collect info for visible nodes
     let mut infos: Vec<TextAreaInfo> = Vec::new();
 
-    for node in &graph.nodes {
+    for node in &snapshot.nodes {
         let screen_x = node.x * zoom + offset_x;
         let screen_y = node.y * zoom + offset_y;
         let screen_w = node.w * zoom;
@@ -133,21 +135,21 @@ pub fn prepare_text(
             continue;
         }
 
+        let tc = node.text_color;
         infos.push(TextAreaInfo {
             node_id: node.id.clone(),
-            text: format_node_label(node),
+            text: node.label.clone(),
             screen_x,
             screen_y,
             screen_w,
             screen_h,
             node_w: node.w,
             node_h: node.h,
-            text_color: text_color_for_kind(node.kind),
+            text_color: Color::rgba(tc[0], tc[1], tc[2], tc[3]),
         });
     }
 
     // Phase 2: Rebuild buffer list to match visible nodes
-    // Keep buffers in sync with infos
     let mut new_buffers: Vec<(String, Buffer)> = Vec::with_capacity(infos.len());
 
     for info in &infos {
@@ -216,31 +218,4 @@ pub fn render_text(
     let _ = glyphon
         .text_renderer
         .render(&glyphon.atlas, &glyphon.viewport, render_pass);
-}
-
-fn format_node_label(node: &GraphNode) -> String {
-    let label = &node.label;
-    if node.content_summary.is_empty() {
-        label.clone()
-    } else {
-        let summary = if node.content_summary.len() > 80 {
-            let end = node.content_summary.floor_char_boundary(80);
-            format!("{}...", &node.content_summary[..end])
-        } else {
-            node.content_summary.clone()
-        };
-        format!("{}\n{}", label, summary)
-    }
-}
-
-fn text_color_for_kind(kind: NodeKind) -> Color {
-    match kind {
-        NodeKind::User => Color::rgb(220, 230, 255),
-        NodeKind::Assistant => Color::rgb(220, 255, 220),
-        NodeKind::ToolUse => Color::rgb(255, 240, 200),
-        NodeKind::ToolResult => Color::rgb(255, 230, 200),
-        NodeKind::Progress => Color::rgb(200, 200, 200),
-        NodeKind::Subagent => Color::rgb(240, 210, 240),
-        NodeKind::Other => Color::rgb(200, 200, 200),
-    }
 }

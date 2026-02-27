@@ -8,6 +8,18 @@ pub fn add_records_to_graph(graph: &mut SessionGraph, records: &[Record], is_sub
     let mut progress_nodes: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     for rec in records {
+        // Extract project name and slug from the first record that has them
+        if graph.project_name.is_empty() {
+            if let Some(ref cwd) = rec.cwd {
+                graph.project_name = cwd.rsplit('/').next().unwrap_or(cwd).to_string();
+            }
+        }
+        if graph.slug.is_empty() {
+            if let Some(ref slug) = rec.slug {
+                graph.slug = slug.clone();
+            }
+        }
+
         // Skip if already in graph
         if graph.node_index.contains_key(&rec.uuid) {
             continue;

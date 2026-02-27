@@ -15,10 +15,17 @@ pub fn draw_sidebar(ctx: &Context, state: &mut AppState) {
             let session_ids: Vec<String> = state.sessions.keys().cloned().collect();
             for sid in &session_ids {
                 let is_active = state.active_session.as_ref() == Some(sid);
-                let label = if sid.len() > 12 {
-                    format!("{}...", &sid[..12])
+                let graph = state.sessions.get(sid);
+                let label = if let Some(g) = graph {
+                    let proj = if g.project_name.is_empty() { "?" } else { &g.project_name };
+                    let name = if g.slug.is_empty() {
+                        &sid[..sid.len().min(8)]
+                    } else {
+                        &g.slug
+                    };
+                    format!("{} / {}", proj, name)
                 } else {
-                    sid.clone()
+                    sid[..sid.len().min(8)].to_string()
                 };
                 if ui.selectable_label(is_active, &label).clicked() {
                     state.active_session = Some(sid.clone());
@@ -35,6 +42,11 @@ pub fn draw_sidebar(ctx: &Context, state: &mut AppState) {
             // Active session stats
             if let Some(ref session_id) = state.active_session.clone() {
                 if let Some(graph) = state.sessions.get(session_id) {
+                    let grouped = crate::graph::grouping::group_session(
+                        graph,
+                        &state.expanded_groups,
+                    );
+                    ui.label(format!("Groups: {}", grouped.groups.len()));
                     ui.label(format!("Nodes: {}", graph.nodes.len()));
                     ui.label(format!("Edges: {}", graph.edges.len()));
                 }

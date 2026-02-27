@@ -25,6 +25,8 @@ pub struct CameraUniform {
 pub struct Vertex {
     pub position: [f32; 2],
     pub color: [f32; 4],
+    pub rect_uv: [f32; 2],
+    pub half_size: [f32; 2],
 }
 
 impl CanvasState {
@@ -41,7 +43,7 @@ impl CanvasState {
                 label: Some("camera_bind_group_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -66,7 +68,12 @@ impl CanvasState {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+                    attributes: &wgpu::vertex_attr_array![
+                        0 => Float32x2,  // position
+                        1 => Float32x4,  // color
+                        2 => Float32x2,  // rect_uv
+                        3 => Float32x2,  // half_size
+                    ],
                 }],
                 compilation_options: Default::default(),
             },
@@ -97,59 +104,65 @@ impl CanvasState {
     }
 }
 
-/// Build vertex data for all nodes and edges in the active session.
-pub fn build_vertices(state: &AppState) -> (Vec<Vertex>, Vec<u32>) {
+/// Build vertex data for all nodes and edges from the render snapshot.
+pub fn build_vertices(snapshot: &RenderSnapshot) -> (Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-
-    let graph = match state.active_session.as_ref().and_then(|s| state.sessions.get(s)) {
-        Some(g) => g,
-        None => return (vertices, indices),
-    };
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
 
-    // Draw edges first (behind nodes)
-    for edge in &graph.edges {
-        let from_idx = graph.node_index.get(&edge.from);
-        let to_idx = graph.node_index.get(&edge.to);
-        if let (Some(&fi), Some(&ti)) = (from_idx, to_idx) {
-            let from = &graph.nodes[fi];
-            let to = &graph.nodes[ti];
+    // Draw edges as curved quads (bezier-approximated)
+    for edge in &snapshot.edges {
+        let edge_color = [0.5, 0.5, 0.5, 0.5];
+        let thickness = 2.0;
+        let zero_hs = [0.0f32, 0.0];
 
-            let x1 = from.x + from.w / 2.0;
-            let y1 = from.y + from.h;
-            let x2 = to.x + to.w / 2.0;
-            let y2 = to.y;
+        // Bezier: start -> control -> end
+        let x1 = edge.x1;
+        let y1 = edge.y1;
+        let x2 = edge.x2;
+        let y2 = edge.y2;
+        let cx = (x1 + x2) / 2.0;
+        let cy = (y1 + y2) / 2.0;
+        // Offset control point for curvature
+        let dx = x2 - x1;
+        let ctrl_x = cx + (y2 - y1) * 0.1;
+        let ctrl_y = cy - dx * 0.1;
 
-            let edge_color = [0.5, 0.5, 0.5, 0.6];
-            let thickness = 2.0;
+        // Tessellate bezier into segments
+        let segments = 8u32;
+        for s in 0..segments {
+            let t0 = s as f32 / segments as f32;
+            let t1 = (s + 1) as f32 / segments as f32;
 
-            // Line as thin quad
-            let dx = x2 - x1;
-            let dy = y2 - y1;
-            let len = (dx * dx + dy * dy).sqrt().max(0.001);
-            let nx = -dy / len * thickness / 2.0;
-            let ny = dx / len * thickness / 2.0;
+            let px0 = bezier(x1, ctrl_x, x2, t0);
+            let py0 = bezier(y1, ctrl_y, y2, t0);
+            let px1 = bezier(x1, ctrl_x, x2, t1);
+            let py1 = bezier(y1, ctrl_y, y2, t1);
+
+            let sdx = px1 - px0;
+            let sdy = py1 - py0;
+            let len = (sdx * sdx + sdy * sdy).sqrt().max(0.001);
+            let nx = -sdy / len * thickness / 2.0;
+            let ny = sdx / len * thickness / 2.0;
 
             let base = vertices.len() as u32;
-            vertices.push(Vertex { position: [x1 + nx, y1 + ny], color: edge_color });
-            vertices.push(Vertex { position: [x1 - nx, y1 - ny], color: edge_color });
-            vertices.push(Vertex { position: [x2 - nx, y2 - ny], color: edge_color });
-            vertices.push(Vertex { position: [x2 + nx, y2 + ny], color: edge_color });
+            vertices.push(Vertex { position: [px0 + nx, py0 + ny], color: edge_color, rect_uv: [0.5, 0.5], half_size: zero_hs });
+            vertices.push(Vertex { position: [px0 - nx, py0 - ny], color: edge_color, rect_uv: [0.5, 0.5], half_size: zero_hs });
+            vertices.push(Vertex { position: [px1 - nx, py1 - ny], color: edge_color, rect_uv: [0.5, 0.5], half_size: zero_hs });
+            vertices.push(Vertex { position: [px1 + nx, py1 + ny], color: edge_color, rect_uv: [0.5, 0.5], half_size: zero_hs });
             indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
     }
 
-    // Draw nodes
-    for node in &graph.nodes {
-        let mut color = node.kind.color();
+    // Draw nodes as rounded rects
+    for node in &snapshot.nodes {
+        let mut color = node.color;
 
-        // Highlight selected node
-        if state.selected_node.as_ref() == Some(&node.id) {
+        if node.is_selected {
             color = [1.0, 1.0, 1.0, 1.0];
         }
 
@@ -162,15 +175,24 @@ pub fn build_vertices(state: &AppState) -> (Vec<Vertex>, Vec<u32>) {
             color[2] = (color[2] + pulse).min(1.0);
         }
 
+        let hw = node.w / 2.0;
+        let hh = node.h / 2.0;
+        let hs = [hw, hh];
+
         let base = vertices.len() as u32;
-        vertices.push(Vertex { position: [node.x, node.y], color });
-        vertices.push(Vertex { position: [node.x + node.w, node.y], color });
-        vertices.push(Vertex { position: [node.x + node.w, node.y + node.h], color });
-        vertices.push(Vertex { position: [node.x, node.y + node.h], color });
+        vertices.push(Vertex { position: [node.x, node.y], color, rect_uv: [0.0, 0.0], half_size: hs });
+        vertices.push(Vertex { position: [node.x + node.w, node.y], color, rect_uv: [1.0, 0.0], half_size: hs });
+        vertices.push(Vertex { position: [node.x + node.w, node.y + node.h], color, rect_uv: [1.0, 1.0], half_size: hs });
+        vertices.push(Vertex { position: [node.x, node.y + node.h], color, rect_uv: [0.0, 1.0], half_size: hs });
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     (vertices, indices)
+}
+
+fn bezier(a: f32, b: f32, c: f32, t: f32) -> f32 {
+    let u = 1.0 - t;
+    u * u * a + 2.0 * u * t * b + t * t * c
 }
 
 const SHADER_SRC: &str = r#"
@@ -188,27 +210,47 @@ var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) rect_uv: vec2<f32>,
+    @location(3) half_size: vec2<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) rect_uv: vec2<f32>,
+    @location(2) half_size: vec2<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // World -> screen: apply zoom and offset, then normalize to clip space
     let screen_pos = in.position * camera.zoom + camera.offset;
     let clip_x = screen_pos.x / camera.viewport_size.x * 2.0 - 1.0;
     let clip_y = -(screen_pos.y / camera.viewport_size.y * 2.0 - 1.0);
     out.clip_position = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
     out.color = in.color;
+    out.rect_uv = in.rect_uv;
+    out.half_size = in.half_size;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
+    // Screen-space half-size
+    let hs = in.half_size * camera.zoom;
+
+    // For edges (half_size ~ 0): pass through color directly
+    if (hs.x < 1.0 || hs.y < 1.0) {
+        return in.color;
+    }
+
+    // Rounded rectangle SDF
+    let p = (in.rect_uv - 0.5) * 2.0 * hs;
+    let r = min(10.0, min(hs.x, hs.y) * 0.3);
+    let q = abs(p) - (hs - r);
+    let d = length(max(q, vec2<f32>(0.0, 0.0))) - r;
+    let alpha = 1.0 - smoothstep(-1.0, 1.0, d);
+
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 "#;

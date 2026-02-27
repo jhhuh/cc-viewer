@@ -79,13 +79,22 @@ impl NativeSource {
     }
 
     fn scan_project_dir(&mut self, project_dir: &Path, events: &mut Vec<DataEvent>) {
+        // Only load the most recently modified session (= the active one)
+        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
         if let Ok(files) = std::fs::read_dir(project_dir) {
             for file in files.flatten() {
                 let fpath = file.path();
                 if fpath.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    self.read_jsonl_file(&fpath, events);
+                    if let Ok(mtime) = fpath.metadata().and_then(|m| m.modified()) {
+                        if newest.as_ref().map_or(true, |(_, t)| mtime > *t) {
+                            newest = Some((fpath, mtime));
+                        }
+                    }
                 }
             }
+        }
+        if let Some((path, _)) = newest {
+            self.read_jsonl_file(&path, events);
         }
     }
 

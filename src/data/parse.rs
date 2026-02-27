@@ -56,6 +56,14 @@ pub fn parse_line(line: &str) -> Option<Record> {
     // Extract tool info
     let (tool_name, tool_use_id) = extract_tool_info(obj);
 
+    let cwd = obj.get("cwd")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let slug = obj.get("slug")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     Some(Record {
         uuid,
         parent_uuid,
@@ -67,6 +75,8 @@ pub fn parse_line(line: &str) -> Option<Record> {
         content_summary,
         tool_name,
         tool_use_id,
+        cwd,
+        slug,
         raw,
     })
 }
