@@ -60,6 +60,7 @@ struct TextAreaInfo {
     node_w: f32,
     node_h: f32,
     text_color: Color,
+    is_terminal: bool,
 }
 
 /// Prepare text areas for all visible nodes.
@@ -146,26 +147,35 @@ pub fn prepare_text(
             node_w: node.w,
             node_h: node.h,
             text_color: Color::rgba(tc[0], tc[1], tc[2], tc[3]),
+            is_terminal: node.is_terminal,
         });
     }
 
     // Phase 2: Rebuild buffer list to match visible nodes
     let mut new_buffers: Vec<(String, Buffer)> = Vec::with_capacity(infos.len());
 
+    let term_font_size = (10.0 * zoom).clamp(2.0, 40.0);
+    let term_line_height = term_font_size * 1.2;
+    let term_metrics = Metrics::new(term_font_size, term_line_height);
+
     for info in &infos {
+        let m = if info.is_terminal { term_metrics } else { metrics };
+
         // Try to reuse existing buffer
         let pos = glyphon.buffers.iter().position(|(id, _)| id == &info.node_id);
         let mut buffer = if let Some(pos) = pos {
             glyphon.buffers.swap_remove(pos).1
         } else {
-            Buffer::new(&mut glyphon.font_system, metrics)
+            Buffer::new(&mut glyphon.font_system, m)
         };
 
-        buffer.set_metrics(&mut glyphon.font_system, metrics);
+        buffer.set_metrics(&mut glyphon.font_system, m);
+
+        let padding = if info.is_terminal { 6.0 } else { 8.0 };
         buffer.set_size(
             &mut glyphon.font_system,
-            Some((info.node_w - 8.0).max(10.0)),
-            Some((info.node_h - 4.0).max(10.0)),
+            Some((info.node_w - padding).max(10.0)),
+            Some((info.node_h - padding).max(10.0)),
         );
 
         let attrs = Attrs::new().family(Family::Monospace);

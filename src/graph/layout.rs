@@ -29,7 +29,11 @@ pub fn do_layout(state: &AppState) -> RenderSnapshot {
     // Compute sizes based on expanded state
     for group in &mut grouped.groups {
         group.w = GROUP_W;
-        if group.expanded {
+        if group.kind == NodeKind::Subagent {
+            // Terminal nodes are taller to show content stream
+            group.w = 400.0;
+            group.h = 250.0;
+        } else if group.expanded {
             let n = group.children.len().max(1);
             group.h = GROUP_HEADER_H + n as f32 * (CHILD_H + CHILD_GAP) + CHILD_GAP;
         } else {
@@ -160,7 +164,34 @@ fn build_snapshot(
     for group in &grouped.groups {
         let is_selected = state.selected_node.as_ref() == Some(&group.id);
 
-        if group.expanded {
+        if group.kind == NodeKind::Subagent {
+            // Terminal node: dark background, show content stream
+            let terminal_content = if let Some(idx) = graph.node_index.get(&group.id) {
+                let node = &graph.nodes[*idx];
+                if node.content_summary.is_empty() {
+                    group.label.clone()
+                } else {
+                    format!("{}\n{}", group.label, node.content_summary)
+                }
+            } else {
+                group.label.clone()
+            };
+
+            nodes.push(RenderNode {
+                id: group.id.clone(),
+                x: group.x,
+                y: group.y,
+                w: group.w,
+                h: group.h,
+                color: [0.08, 0.08, 0.10, 0.95],
+                text_color: [0, 230, 64, 255],
+                label: terminal_content,
+                is_selected,
+                is_group: false,
+                is_terminal: true,
+                last_update_time: group.last_update_time,
+            });
+        } else if group.expanded {
             // Group bounding box (translucent background)
             let mut bg_color = group.kind.color();
             bg_color[3] = 0.15;
@@ -175,6 +206,7 @@ fn build_snapshot(
                 label: group.label.clone(),
                 is_selected: false,
                 is_group: true,
+                is_terminal: false,
                 last_update_time: group.last_update_time,
             });
 
@@ -195,6 +227,7 @@ fn build_snapshot(
                         label: format_node_label(node),
                         is_selected: child_selected,
                         is_group: false,
+                        is_terminal: false,
                         last_update_time: node.last_update_time,
                     });
                     cy += CHILD_H + CHILD_GAP;
@@ -213,6 +246,7 @@ fn build_snapshot(
                 label: group.label.clone(),
                 is_selected,
                 is_group: true,
+                is_terminal: false,
                 last_update_time: group.last_update_time,
             });
         }

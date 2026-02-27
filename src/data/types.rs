@@ -147,6 +147,8 @@ pub struct RenderNode {
     pub label: String,
     pub is_selected: bool,
     pub is_group: bool,
+    /// Subagent nodes render as terminal windows with scrolling content.
+    pub is_terminal: bool,
     pub last_update_time: f64,
 }
 
@@ -234,21 +236,21 @@ pub fn apply_events(state: &mut AppState, events: Vec<DataEvent>) {
                         ..Default::default()
                     }
                 });
-                crate::graph::build::add_records_to_graph(graph, &records, false);
+                crate::graph::build::add_records_to_graph(graph, &records, None);
 
                 // Auto-select first session
                 if state.active_session.is_none() {
                     state.active_session = Some(session_id);
                 }
             }
-            DataEvent::SubagentRecords { session_id, records, .. } => {
+            DataEvent::SubagentRecords { session_id, agent_id, records, .. } => {
                 let graph = state.sessions.entry(session_id.clone()).or_insert_with(|| {
                     SessionGraph {
                         session_id: session_id.clone(),
                         ..Default::default()
                     }
                 });
-                crate::graph::build::add_records_to_graph(graph, &records, true);
+                crate::graph::build::add_records_to_graph(graph, &records, Some(&agent_id));
             }
         }
     }

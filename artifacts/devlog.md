@@ -55,3 +55,18 @@
 - `App` no longer stores `CanvasState` — GPU state lives in callback_resources
 - `handle_input` now takes `&RenderSnapshot` for hit testing on grouped nodes
 - `build_vertices` and `prepare_text` take `&RenderSnapshot` instead of `&AppState`
+
+### Bug fixes during overhaul
+- **Navigation broken**: conditional repaint didn't fire on scroll/pan input; fixed by returning repaint bool from `handle_input`
+- **Fonts broken**: Unicode arrow `→` had no glyph in monospace font; replaced with ASCII `->`
+- **Vertical alignment**: force layout started all nodes at x=0, linear chains had zero horizontal spread; fixed with topological-depth initial positions
+
+### Visual improvements
+- **Rounded rectangle SDF**: fragment shader uses signed distance function for soft-edged nodes instead of hard rectangles
+- **Quadratic Bezier edges**: 8-segment tessellated curves between nodes instead of straight lines
+- **Camera bind group**: changed to VERTEX_FRAGMENT visibility so fragment shader can access zoom for proper SDF scaling
+
+### UX improvements
+- **Session labels**: sidebar shows "project_name / slug" (e.g. "cc-viewer / cuddly-wibbling-rivest") instead of raw UUID
+- **Active session only**: `scan_project_dir` loads only the most recently modified JSONL, not all historical sessions
+- **cwd/slug extraction**: Record and SessionGraph now carry project metadata from JSONL fields

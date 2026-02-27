@@ -167,7 +167,7 @@ mod tests {
 
         let records = parse::parse_lines(lines);
         let mut graph = SessionGraph::default();
-        add_records_to_graph(&mut graph, &records, false);
+        add_records_to_graph(&mut graph, &records, None);
 
         let grouped = group_session(&graph, &HashSet::new());
         assert_eq!(grouped.groups.len(), 2);
