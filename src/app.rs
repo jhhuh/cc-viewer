@@ -16,6 +16,9 @@ impl App {
         let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("wgpu not enabled");
         let canvas = crate::render::CanvasState::new(wgpu_render_state);
 
+        // Initialize glyphon persistent state in callback resources
+        crate::render::text::GlyphonState::init(wgpu_render_state);
+
         let source = data::native::NativeSource::new();
 
         Self {

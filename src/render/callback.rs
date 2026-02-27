@@ -5,6 +5,7 @@ use wgpu::util::DeviceExt;
 
 use crate::data::types::AppState;
 use super::canvas::{self, CameraUniform, CanvasState};
+use super::text::GlyphonState;
 
 /// The egui_wgpu paint callback that renders the graph canvas.
 #[derive(Clone)]
@@ -21,30 +22,35 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         render_pass: &mut wgpu::RenderPass<'static>,
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
-        let resources = match callback_resources.get::<FrameResources>() {
-            Some(r) => r,
-            None => return,
-        };
-
-        if resources.index_count == 0 {
-            return;
+        // Draw geometry (nodes + edges)
+        if let Some(resources) = callback_resources.get::<FrameResources>() {
+            if resources.index_count > 0 {
+                render_pass.set_pipeline(&resources.pipeline);
+                render_pass.set_bind_group(0, &resources.camera_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    resources.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                render_pass.draw_indexed(0..resources.index_count, 0, 0..1);
+            }
         }
 
-        render_pass.set_pipeline(&resources.pipeline);
-        render_pass.set_bind_group(0, &resources.camera_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..resources.index_count, 0, 0..1);
+        // Draw text on top
+        if let Some(glyphon) = callback_resources.get::<GlyphonState>() {
+            super::text::render_text(glyphon, render_pass);
+        }
     }
 
     fn prepare(
         &self,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
         _screen_descriptor: &egui_wgpu::ScreenDescriptor,
         _encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        // Prepare geometry
         let (vertices, indices) = canvas::build_vertices(&self.state);
 
         let camera_uniform = CameraUniform {
@@ -89,6 +95,18 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
             camera_bind_group,
             index_count: indices.len() as u32,
         });
+
+        // Prepare text
+        if let Some(glyphon) = callback_resources.get_mut::<GlyphonState>() {
+            super::text::prepare_text(
+                glyphon,
+                device,
+                queue,
+                &self.state,
+                self.rect.width(),
+                self.rect.height(),
+            );
+        }
 
         Vec::new()
     }
