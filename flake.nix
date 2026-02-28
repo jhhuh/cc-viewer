@@ -93,6 +93,9 @@
             tmux
             mdbook
             gh
+            xvfb-run
+            xorg.xorgserver
+            imagemagick
           ];
 
           nativeBuildInputs = with pkgs; [
