@@ -96,6 +96,7 @@
             xvfb-run
             xorg.xorgserver
             imagemagick
+            xdotool
           ];
 
           nativeBuildInputs = with pkgs; [
