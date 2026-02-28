@@ -1,49 +1,61 @@
 # Understanding the Graph
 
-## Node types
+## Conversation groups
 
-Each node in the graph represents a record from the Claude Code session log. Nodes are color-coded by type:
+cc-viewer groups raw JSONL records into **conversation turns**. Each turn starts with a User message and includes the following Assistant response, tool calls, and tool results — until the next User message or subagent spawn.
+
+![Session with many turns](images/03_session_switch.png)
+
+The result is a vertical stream of blocks, each representing one exchange in the conversation.
+
+## Node colors
 
 | Color | Node Kind | Description |
 |-------|-----------|-------------|
-| Blue (`#4073D9`) | **User** | A user message sent to Claude |
+| Blue (`#4073D9`) | **User** | A user message or User -> Assistant turn |
 | Green (`#4DB366`) | **Assistant** | A text response from Claude |
 | Orange (`#CC8C33`) | **ToolUse** | A tool call (Bash, Read, Write, Grep, etc.) |
 | Tan (`#A67333`) | **ToolResult** | The output returned from a tool call |
 | Gray (`#808080`) | **Progress** | Collapsed progress updates (bash output, agent status) |
-| Purple (`#B34DB3`) | **Subagent** | Messages from a spawned subagent |
+| Dark (`#141419`) | **Subagent** | Terminal-style node with green text for subagent tasks |
 | Dark gray (`#666666`) | **Other** | Unknown or unclassified records |
 
 ## Edge meaning
 
-Edges represent the `parentUuid` relationship in the JSONL log. Each record (except roots) has a `parentUuid` pointing to the record it follows from. This forms a tree (or DAG when subagents join).
+Edges connect sequential conversation groups as curved lines flowing top to bottom. They represent the flow of the conversation.
 
-The edge direction is **top to bottom** — parent nodes are above their children in the layout.
+## Expanding nodes
+
+Click any node to expand it in-place. The expanded view shows a terminal-like content log:
+
+![Node expanded](images/04_node_expanded.png)
+
+- `>>>` prefix marks user input
+- `$` prefix marks tool calls
+- `<-` prefix marks tool results
+- `@` prefix marks subagent output
+
+The sidebar also shows the node's kind, ID, and raw content.
 
 ## Progress collapsing
 
-Claude Code emits `bash_progress` and `agent_progress` records very frequently — often thousands per command as output streams in. Displaying each one as a separate node would make the graph unusable.
-
-cc-viewer collapses these: all consecutive progress records sharing the same `toolUseID` merge into a **single gray node**. The node's timestamp updates with each new progress record, so it pulses as active.
-
-For example, a `cargo build` command that emits 500 progress lines becomes one gray "progress" node in the graph.
+Claude Code emits `bash_progress` and `agent_progress` records very frequently — often thousands per command as output streams in. cc-viewer collapses these: all consecutive progress records sharing the same `toolUseID` merge into a **single node**.
 
 ## Subagent nodes
 
-When Claude Code spawns a subagent (via the Task tool), the subagent's messages are recorded in a separate JSONL file under `{session_id}/subagents/agent-{id}.jsonl`.
-
-cc-viewer loads these files and adds their records to the same session graph. Subagent records are marked with `isSidechain: true` and rendered as purple nodes.
+When Claude Code spawns a subagent (via the Task tool), the subagent's messages are recorded in a separate JSONL file. cc-viewer loads these and merges all records from one subagent into a single terminal-style dark node with green text.
 
 ## Layout
 
-Nodes are arranged in a tree layout:
+Conversation groups are stacked vertically in a simple linear layout:
 
-- **Y axis** (vertical): depth in the parent-child tree. Root nodes at the top, deeper conversations below.
-- **X axis** (horizontal): siblings at the same depth are placed side by side.
-- **Node size**: each node is 220x60 pixels in world space, with 40px horizontal gap and 30px vertical gap.
+- **Y axis**: sequential position in the conversation
+- **X axis**: all groups are left-aligned at x=0
+- **Node size**: 320px wide, 60px tall (collapsed), up to 500px tall (expanded)
+- **Gap**: 30px between groups
 
-Roots are nodes with no `parentUuid` (or whose parent isn't in the graph). A typical session has one root — the first user message.
+This reflects the inherently linear nature of Claude Code sessions.
 
 ## Active highlighting
 
-Nodes that received updates within the last 2 seconds glow brighter. The brightness decays linearly over the 2-second window. This gives visual feedback during live sessions — you can see which parts of the graph are currently active.
+Nodes that received updates within the last 2 seconds glow brighter. The brightness decays linearly over the 2-second window, giving visual feedback during live sessions.

@@ -1,6 +1,6 @@
 # cc-viewer
 
-Claude Code session graph visualizer. Native Rust GUI (eframe + wgpu) that watches Claude Code's runtime directory and visualizes live sessions as a directed graph.
+Claude Code session visualizer. Native Rust GUI (eframe + wgpu) that watches Claude Code's runtime directory and visualizes live sessions as an interactive scrollable timeline.
 
 ## Quick Start
 
@@ -36,7 +36,8 @@ src/
     parse.rs        -- JSONL parser
   graph/
     build.rs        -- Records → graph with progress collapsing
-    layout.rs       -- Tree layout algorithm
+    layout.rs       -- Linear vertical stack layout
+    grouping.rs     -- Group nodes into conversation turns
     state.rs        -- Pan/zoom/selection input handling
   render/
     canvas.rs       -- wgpu pipeline: node rects, edges

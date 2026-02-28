@@ -42,11 +42,13 @@ cargo run
 
 ## First launch
 
-When cc-viewer starts, it scans `~/.claude/projects/` for all session JSONL files. If Claude Code has been used on your machine, you should see sessions listed in the left sidebar immediately.
+When cc-viewer starts, it scans `~/.claude/projects/` for projects with active runtime entries. Sessions are listed in the sidebar grouped by project:
+
+![First launch](images/01_overview.png)
 
 If the sidebar says "No sessions found", either:
 - Claude Code hasn't been used yet, or
-- The session files are in a non-standard location
+- No sessions have an active runtime entry (check "Show inactive" to see older sessions)
 
 ## Viewing live sessions
 

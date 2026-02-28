@@ -1,30 +1,46 @@
 # cc-viewer
 
-**cc-viewer** is a native GPU-accelerated application that visualizes Claude Code sessions as interactive directed graphs on an infinite zoomable canvas.
+**cc-viewer** is a native GPU-accelerated application that visualizes Claude Code sessions as an interactive scrollable timeline on an infinite zoomable canvas.
 
-When Claude Code runs, it writes append-only JSONL logs recording every message, tool call, subagent spawn, and progress update. cc-viewer watches these files in real time, parses them into a directed acyclic graph, and renders the result using wgpu with glyphon text — giving you a live, navigable map of what Claude Code is doing.
+When Claude Code runs, it writes append-only JSONL logs recording every message, tool call, subagent spawn, and progress update. cc-viewer watches these files in real time, parses them into conversation groups, and renders the result using wgpu with glyphon text — giving you a live, navigable view of what Claude Code is doing.
 
 ## What it looks like
 
-At a high zoom level, you see the full session as a tree of colored rectangles connected by edges:
+The sidebar groups sessions by project. The canvas shows conversation turns as a vertical stream of colored blocks:
 
-- **Blue** nodes are user messages
-- **Green** nodes are assistant responses
-- **Orange** nodes are tool calls (Bash, Read, Write, etc.)
-- **Tan** nodes are tool results
-- **Gray** nodes are collapsed progress updates
-- **Purple** nodes are subagent tasks
+![Overview](images/01_overview.png)
 
-Scroll to zoom in and the text on each node becomes readable — labels, content summaries, tool names. Click any node to snap-zoom to it and see its full content in the sidebar.
+Toggle "Show inactive" to see older sessions with relative timestamps. Active sessions appear green, inactive ones gray:
+
+![All sessions](images/02_all_sessions.png)
+
+Switching to a session with many conversation turns — each block represents a User/Assistant/Tool exchange:
+
+![Session with many turns](images/03_session_switch.png)
+
+Click a node to expand it in-place, revealing its content. The sidebar shows node details (kind, ID, raw content):
+
+![Node expanded](images/04_node_expanded.png)
+
+Scroll to zoom out for a bird's-eye view of the full session:
+
+![Zoomed out](images/05_zoomed_out.png)
+
+## Node colors
+
+- **Blue** nodes are user messages (or User -> Assistant turns)
+- **Dark terminal** nodes with green text are subagent tasks
+
+Conversation turns are grouped — a single block may contain a User message, Assistant response, and multiple tool calls.
 
 ## Key features
 
-- **Live updates**: watches JSONL files via inotify; graph grows as Claude Code works
-- **Infinite canvas**: pan and zoom freely across the entire session graph
+- **Live updates**: watches JSONL files via inotify; timeline grows as Claude Code works
+- **Project tree sidebar**: sessions grouped by project, with active/inactive filtering and timestamps
+- **Infinite canvas**: pan and zoom freely across the entire session
 - **GPU text**: glyphon renders text directly in the wgpu pass — no pixelation at any zoom level
 - **Progress collapsing**: thousands of `bash_progress` / `agent_progress` records collapse into single nodes
-- **Multi-session**: discovers and lists all sessions under `~/.claude/projects/`
-- **Click-to-zoom**: click a node to animate the camera to it and read its full content
+- **Click-to-expand**: click a node to reveal its terminal-like content log in-place
 - **Active highlighting**: recently-updated nodes pulse brighter for 2 seconds
 
 ## Tech stack

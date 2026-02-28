@@ -61,7 +61,7 @@
 
         serve-docs = pkgs.writeShellScriptBin "cc-viewer-docs" ''
           echo "Serving docs at http://localhost:3000"
-          ${pkgs.python3}/bin/python3 -m http.server 3000 -d ${docs}
+          ${pkgs.python3}/bin/python3 -m http.server 3000 -b 127.0.0.1 -d ${docs}
         '';
       in {
         packages = {

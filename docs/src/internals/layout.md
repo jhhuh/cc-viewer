@@ -1,81 +1,72 @@
 # Layout Algorithm
 
-`graph/layout.rs` assigns screen positions to all nodes in a session graph. The algorithm is a simple DFS-based tree layout — sufficient because Claude Code session graphs are nearly trees (the `parentUuid` chain is linear with occasional branching for subagents).
+`graph/layout.rs` assigns screen positions to all conversation groups in a session. The algorithm is a simple vertical stack — Claude Code sessions are linear conversation streams, so no complex graph layout is needed.
 
 ## Constants
 
 ```rust
-const NODE_W: f32 = 220.0;   // node width in world pixels
-const NODE_H: f32 = 60.0;    // node height in world pixels
-const GAP_X: f32 = 40.0;     // horizontal gap between siblings
-const GAP_Y: f32 = 30.0;     // vertical gap between depth levels
+const GROUP_W: f32 = 320.0;   // group width in world pixels
+const GROUP_H: f32 = 60.0;    // collapsed group height
+const GAP_Y: f32 = 30.0;      // vertical gap between groups
+const CONTENT_LINE_H: f32 = 20.0;  // height per content line when expanded
+const MAX_EXPANDED_H: f32 = 500.0; // max expanded height
 ```
 
 ## Algorithm
 
-### Step 1: Build adjacency
+### Step 1: Group session nodes
 
-From the edge list, build a `HashMap<String, Vec<String>>` mapping each parent to its children. Also track which nodes have parents (the `has_parent` set).
+Raw graph nodes are grouped into conversation turns by `grouping.rs`. Each turn starts at a User or Subagent node and includes all following nodes until the next turn boundary.
 
-### Step 2: Find roots
+### Step 2: Compute sizes
 
-Roots are nodes not in the `has_parent` set — they have no incoming edges. Typically there's one root per session (the first user message).
+Each group gets a fixed width of 320px. Height depends on expansion state:
 
-### Step 3: DFS traversal
+- **Collapsed**: 60px
+- **Expanded**: 60 + (line_count * 20), capped at 500px
 
-From each root, perform a depth-first traversal:
+Heights are animated smoothly — the layout uses the current animated value, not the target.
 
-```
-fn dfs(node, depth):
-    depth_map[node] = depth
-    order.push(node)
-    for child in children[node]:
-        dfs(child, depth + 1)
-```
+### Step 3: Vertical stack
 
-This produces:
-- `depth_map`: node -> depth level (y position)
-- `order`: nodes in DFS order (determines x position within each level)
+Groups are placed in a vertical column:
 
-A `visited` set prevents infinite loops if the graph has cycles (shouldn't happen, but defensive).
-
-### Step 4: Handle orphans
-
-Any nodes not reached by DFS (disconnected from all roots) are placed at depth 0.
-
-### Step 5: Assign positions
-
-For each node in `order`:
-```
-x = column_count_at_depth * (NODE_W + GAP_X)
-y = depth * (NODE_H + GAP_Y)
-column_count_at_depth += 1
+```rust
+let mut y = 0.0;
+for group in &mut grouped.groups {
+    group.x = 0.0;
+    group.y = y;
+    y += group.h + GAP_Y;
+}
 ```
 
-This places nodes left-to-right within each depth level, in DFS traversal order.
+### Step 4: Build snapshot
+
+The positioned groups are converted to `RenderNode` structs for the GPU pipeline. Edges connect the bottom-center of each group to the top-center of the next.
+
+## Animation
+
+When a node expands or collapses, `rebuild_snapshot()` recalculates the vertical stack using current animated heights. This shifts all nodes below the expanding node downward smoothly, without re-running the grouping step.
 
 ## Result
 
-After layout, the graph looks like a top-down tree:
+The layout produces a clean vertical stream:
 
 ```
-[User]                           depth 0
+[User]                         y = 0
   |
-[Assistant]                      depth 1
+[User -> Assistant -> 98 tools] y = 90
   |
-[Tool: Bash]  [Tool: Read]      depth 2
-  |              |
-[Result]      [Result]           depth 3
+[User -> Assistant -> 10 tools] y = 180
   |
-[Assistant]                      depth 4
+[User]                         y = 270
+  ...
 ```
 
-Subagent nodes appear alongside main session nodes at their respective depths, offset to the right because they come later in DFS order.
+## Why not force-directed?
 
-## Limitations
+An earlier version used force-directed layout (O(n^2) per iteration, 80 iterations). This was replaced with the linear stack because:
 
-- No edge crossing minimization (would need Sugiyama or similar)
-- No subtree width balancing (nodes are simply placed left-to-right)
-- No animation on layout changes (positions jump when new nodes are added)
-
-These are intentional simplifications. The data is nearly linear (a conversation), so complex graph layout algorithms would add cost without visual benefit.
+1. Claude Code conversations are sequential, not graph-shaped
+2. Force layout created visual tangles for linear data
+3. Linear stack is O(n) and produces cleaner output
