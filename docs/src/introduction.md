@@ -6,23 +6,19 @@ When Claude Code runs, it writes append-only JSONL logs recording every message,
 
 ## What it looks like
 
-The sidebar groups sessions by project. The canvas shows conversation turns as a vertical stream of colored blocks:
+"Show inactive" reveals every session across all projects, with relative timestamps. Active sessions appear green, inactive ones gray:
 
-![Overview](images/01_overview.png)
+![All sessions](images/01_overview.png)
 
-Toggle "Show inactive" to see older sessions with relative timestamps. Active sessions appear green, inactive ones gray:
+Uncheck "Show inactive" to filter down to live sessions only:
 
-![All sessions](images/02_all_sessions.png)
+![Active sessions](images/02_all_sessions.png)
 
-Switching to a session with many conversation turns — each block represents a User/Assistant/Tool exchange:
+Selecting a session renders its conversation as a vertical stream. Each node shows the flow (User -> Assistant -> N tools):
 
-![Session with many turns](images/03_session_switch.png)
+![Session view](images/03_session_switch.png)
 
-Click a node to expand it in-place, revealing its content. The sidebar shows node details (kind, ID, raw content):
-
-![Node expanded](images/04_node_expanded.png)
-
-Scroll to zoom out for a bird's-eye view of the full session:
+Scroll to zoom out for a bird's-eye view of the full session timeline:
 
 ![Zoomed out](images/05_zoomed_out.png)
 

@@ -28,8 +28,6 @@ Edges connect sequential conversation groups as curved lines flowing top to bott
 
 Click any node to expand it in-place. The expanded view shows a terminal-like content log:
 
-![Node expanded](images/04_node_expanded.png)
-
 - `>>>` prefix marks user input
 - `$` prefix marks tool calls
 - `<-` prefix marks tool results

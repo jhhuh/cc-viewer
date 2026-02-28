@@ -6,23 +6,19 @@ Live session visualizer for [Claude Code](https://docs.anthropic.com/en/docs/cla
 
 ## Screenshots
 
-**Session overview** — sidebar tree groups sessions by project, canvas shows conversation turns as a vertical stream:
+**All sessions** — "Show inactive" reveals every session across projects, with relative timestamps (green = active, gray = inactive):
 
-![Overview](docs/src/images/01_overview.png)
+![All sessions](docs/src/images/01_overview.png)
 
-**All sessions** — toggle "Show inactive" to see older sessions with relative timestamps and color coding (green = active, gray = inactive):
+**Active sessions only** — uncheck "Show inactive" to filter down to live sessions. Stats show 67 conversation groups across 3017 nodes:
 
-![All sessions](docs/src/images/02_all_sessions.png)
+![Active sessions](docs/src/images/02_all_sessions.png)
 
-**Session with many turns** — switching to a session with 22 conversation groups, 287 nodes:
+**Session view** — selecting a session renders its conversation as a vertical stream of grouped turns. Each node shows the flow: User -> Assistant -> N tools:
 
-![Session switch](docs/src/images/03_session_switch.png)
+![Session view](docs/src/images/03_session_switch.png)
 
-**Node expanded** — click a node to expand it in-place, showing content. Sidebar shows node details:
-
-![Node expanded](docs/src/images/04_node_expanded.png)
-
-**Zoomed out** — scroll to zoom out for a bird's-eye view of the full session:
+**Zoomed out** — scroll to zoom out for a bird's-eye view of the full session timeline:
 
 ![Zoomed out](docs/src/images/05_zoomed_out.png)
 
