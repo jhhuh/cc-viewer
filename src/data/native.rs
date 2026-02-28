@@ -65,12 +65,15 @@ impl NativeSource {
     fn scan_initial(&mut self) -> Vec<DataEvent> {
         let mut events = Vec::new();
         let projects_dir = projects_path();
+        let runtime_dir = runtime_path();
 
-        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+        // Only load sessions for projects that have an active runtime dir entry
+        if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    self.scan_project_dir(&path, &mut events);
+                let name = entry.file_name();
+                let project_dir = Path::new(&projects_dir).join(&name);
+                if project_dir.is_dir() {
+                    self.scan_project_dir(&project_dir, &mut events);
                 }
             }
         }
@@ -79,22 +82,13 @@ impl NativeSource {
     }
 
     fn scan_project_dir(&mut self, project_dir: &Path, events: &mut Vec<DataEvent>) {
-        // Only load the most recently modified session (= the active one)
-        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
         if let Ok(files) = std::fs::read_dir(project_dir) {
             for file in files.flatten() {
                 let fpath = file.path();
                 if fpath.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    if let Ok(mtime) = fpath.metadata().and_then(|m| m.modified()) {
-                        if newest.as_ref().map_or(true, |(_, t)| mtime > *t) {
-                            newest = Some((fpath, mtime));
-                        }
-                    }
+                    self.read_jsonl_file(&fpath, events);
                 }
             }
-        }
-        if let Some((path, _)) = newest {
-            self.read_jsonl_file(&path, events);
         }
     }
 
@@ -122,6 +116,13 @@ impl NativeSource {
         self.offsets.insert(path.to_path_buf(), content.len() as u64);
 
         if !records.is_empty() {
+            let file_mtime = std::fs::metadata(path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+
             // Check if this is a subagent file
             let is_subagent = path
                 .parent()
@@ -153,6 +154,7 @@ impl NativeSource {
                     session_id,
                     file_path: path.to_string_lossy().to_string(),
                     records,
+                    last_modified: file_mtime,
                 });
 
                 // Also scan for subagent dir

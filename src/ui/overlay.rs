@@ -10,33 +10,81 @@ pub fn draw_sidebar(ctx: &Context, state: &mut AppState, snapshot: &crate::data:
             ui.heading("cc-viewer");
             ui.separator();
 
-            // Session list
-            ui.label("Sessions:");
-            let session_ids: Vec<String> = state.sessions.keys().cloned().collect();
-            for sid in &session_ids {
-                let is_active = state.active_session.as_ref() == Some(sid);
-                let graph = state.sessions.get(sid);
-                let label = if let Some(g) = graph {
-                    let proj = if g.project_name.is_empty() { "?" } else { &g.project_name };
-                    let name = if g.slug.is_empty() {
-                        &sid[..sid.len().min(8)]
-                    } else {
-                        &g.slug
-                    };
-                    format!("{} / {}", proj, name)
-                } else {
-                    sid[..sid.len().min(8)].to_string()
-                };
-                if ui.selectable_label(is_active, &label).clicked() {
-                    state.active_session = Some(sid.clone());
-                    state.selected_node = None;
-                    state.layout_dirty = true;
-                    state.needs_center = true;
+            // Session tree grouped by project
+            ui.checkbox(&mut state.show_inactive, "Show inactive");
+            ui.separator();
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            let active_threshold = 3600.0; // 1 hour
+
+            // Group sessions by project_name, sorted by last_modified desc
+            let mut by_project: std::collections::BTreeMap<String, Vec<(String, String, f64)>> =
+                std::collections::BTreeMap::new();
+            for (sid, graph) in &state.sessions {
+                let is_recent = (now - graph.last_modified) < active_threshold;
+                if !state.show_inactive && !is_recent {
+                    continue;
                 }
+                let proj = if graph.project_name.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    graph.project_name.clone()
+                };
+                let name = if graph.slug.is_empty() {
+                    sid[..sid.len().min(8)].to_string()
+                } else {
+                    graph.slug.clone()
+                };
+                by_project
+                    .entry(proj)
+                    .or_default()
+                    .push((sid.clone(), name, graph.last_modified));
             }
 
-            if session_ids.is_empty() {
+            // Sort each project's sessions by last_modified descending
+            for sessions in by_project.values_mut() {
+                sessions.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            }
+
+            if by_project.is_empty() {
                 ui.label("No sessions found");
+            }
+
+            for (project, sessions) in &by_project {
+                let any_selected = sessions.iter().any(|(sid, _, _)| {
+                    state.active_session.as_ref() == Some(sid)
+                });
+                let header = if any_selected {
+                    egui::RichText::new(project).strong()
+                } else {
+                    egui::RichText::new(project)
+                };
+                egui::CollapsingHeader::new(header)
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        for (sid, name, mtime) in sessions {
+                            let is_selected = state.active_session.as_ref() == Some(sid);
+                            let is_recent = (now - mtime) < active_threshold;
+                            let age = format_age(now - mtime);
+
+                            let label_text = format!("{} ({})", name, age);
+                            let rich = if is_recent {
+                                egui::RichText::new(&label_text).color(egui::Color32::from_rgb(120, 220, 120))
+                            } else {
+                                egui::RichText::new(&label_text).color(egui::Color32::from_rgb(140, 140, 140))
+                            };
+
+                            if ui.selectable_label(is_selected, rich).clicked() {
+                                state.active_session = Some(sid.clone());
+                                state.selected_node = None;
+                                state.layout_dirty = true;
+                                state.needs_center = true;
+                            }
+                        }
+                    });
             }
 
             ui.separator();
@@ -161,4 +209,16 @@ fn format_node_content(node: &GraphNode) -> String {
     }
 
     out
+}
+
+fn format_age(secs: f64) -> String {
+    if secs < 60.0 {
+        "just now".to_string()
+    } else if secs < 3600.0 {
+        format!("{}m ago", (secs / 60.0) as u32)
+    } else if secs < 86400.0 {
+        format!("{}h ago", (secs / 3600.0) as u32)
+    } else {
+        format!("{}d ago", (secs / 86400.0) as u32)
+    }
 }

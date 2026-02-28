@@ -93,6 +93,8 @@ pub struct SessionGraph {
     pub edges: Vec<GraphEdge>,
     /// uuid -> index in nodes
     pub node_index: HashMap<String, usize>,
+    /// File modification time (seconds since epoch)
+    pub last_modified: f64,
 }
 
 /// Full application state shared between modules.
@@ -114,6 +116,8 @@ pub struct AppState {
     pub node_heights: HashMap<String, (f32, f32)>,
     /// Center camera on first layout
     pub needs_center: bool,
+    /// Show inactive (old) sessions in sidebar
+    pub show_inactive: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -199,6 +203,7 @@ impl Default for AppState {
             generation: 0,
             node_heights: HashMap::new(),
             needs_center: true,
+            show_inactive: false,
         }
     }
 }
@@ -211,6 +216,8 @@ pub enum DataEvent {
         session_id: String,
         file_path: String,
         records: Vec<Record>,
+        /// File modification time (seconds since epoch)
+        last_modified: f64,
     },
     /// New records from a subagent JSONL
     SubagentRecords {
@@ -229,13 +236,16 @@ pub fn apply_events(state: &mut AppState, events: Vec<DataEvent>) {
 
     for event in events {
         match event {
-            DataEvent::SessionRecords { session_id, records, .. } => {
+            DataEvent::SessionRecords { session_id, records, last_modified, .. } => {
                 let graph = state.sessions.entry(session_id.clone()).or_insert_with(|| {
                     SessionGraph {
                         session_id: session_id.clone(),
                         ..Default::default()
                     }
                 });
+                if last_modified > graph.last_modified {
+                    graph.last_modified = last_modified;
+                }
                 crate::graph::build::add_records_to_graph(graph, &records, None);
 
                 // Auto-select first session
