@@ -70,3 +70,20 @@
 - **Session labels**: sidebar shows "project_name / slug" (e.g. "cc-viewer / cuddly-wibbling-rivest") instead of raw UUID
 - **Active session only**: `scan_project_dir` loads only the most recently modified JSONL, not all historical sessions
 - **cwd/slug extraction**: Record and SessionGraph now carry project metadata from JSONL fields
+
+## 2026-02-28: In-place expand + animation fixes
+
+### Changes (uncommitted from previous session)
+- **In-place expand/collapse**: Groups expand to show `content_log` text instead of spawning child nodes. ~100 lines removed from layout.rs.
+- **Animated node heights**: smooth lerp (0.15/frame) between collapsed/expanded sizes
+- **Auto-center camera**: fits all nodes with 20% padding on first layout and session switch
+- **Rich text**: expanded nodes get bold sans-serif title + monospace body via glyphon `set_rich_text`
+- **Better tool_result detection**: inspects `message.content[].type == "tool_result"` in raw JSON
+- **Tighter force layout**: k_repel 50k→8k, k_attract 0.01→0.05, rest_length 150→80
+- **Unified click behavior**: all nodes toggle expand/collapse + zoom
+
+### Performance fix: layout/animation separation
+- **Problem**: `animate_heights` set `layout_dirty = true`, causing the full `do_layout` (including 80 iterations of O(n^2) force simulation) to re-run every animation frame. This caused position jitter since force layout is non-deterministic.
+- **Fix**: Cached `GroupedGraph` in `App` struct. Full layout (grouping + force sim) only runs on data events or expand/collapse toggle. During animation, only heights are updated on cached groups and snapshot is rebuilt — no force sim.
+- **Also**: Removed redundant `group_session()` call in sidebar; sidebar now reads group count from snapshot.
+- **Also**: Removed dead `GraphNode.{x,y,w,h,timestamp}` fields (made obsolete by grouping system).

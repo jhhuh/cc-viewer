@@ -3,42 +3,42 @@ use super::grouping::{self, GroupNode, GroupedGraph};
 
 const GROUP_W: f32 = 320.0;
 const GROUP_H: f32 = 60.0;
-const CHILD_H: f32 = 48.0;
-const CHILD_GAP: f32 = 6.0;
-const CHILD_INSET: f32 = 10.0;
-const GROUP_HEADER_H: f32 = 30.0;
-const GAP_Y: f32 = 50.0;
+const GAP_Y: f32 = 30.0;
+const CONTENT_LINE_H: f32 = 20.0;
+const MAX_EXPANDED_H: f32 = 500.0;
 
-/// Build a RenderSnapshot from the active session's grouped graph.
-pub fn do_layout(state: &AppState) -> RenderSnapshot {
+/// Full layout: group session nodes, compute sizes, run force layout, build snapshot.
+/// Returns the cached GroupedGraph for reuse during animation.
+pub fn do_layout(state: &mut AppState) -> (GroupedGraph, RenderSnapshot) {
     let graph = match state
         .active_session
         .as_ref()
         .and_then(|s| state.sessions.get(s))
     {
         Some(g) => g,
-        None => return RenderSnapshot::default(),
+        None => return (GroupedGraph { groups: Vec::new(), edges: Vec::new() }, RenderSnapshot::default()),
     };
 
     let mut grouped = grouping::group_session(graph, &state.expanded_groups);
 
     if grouped.groups.is_empty() {
-        return RenderSnapshot::default();
+        return (grouped, RenderSnapshot::default());
     }
 
-    // Compute sizes based on expanded state
+    // Compute target sizes — every group is one node
     for group in &mut grouped.groups {
         group.w = GROUP_W;
-        if group.kind == NodeKind::Subagent {
-            // Terminal nodes are taller to show content stream
-            group.w = 400.0;
-            group.h = 250.0;
-        } else if group.expanded {
-            let n = group.children.len().max(1);
-            group.h = GROUP_HEADER_H + n as f32 * (CHILD_H + CHILD_GAP) + CHILD_GAP;
+        let target_h = if group.expanded {
+            let line_count = group.content_log.lines().count().max(1) as f32;
+            (GROUP_H + line_count * CONTENT_LINE_H).min(MAX_EXPANDED_H)
         } else {
-            group.h = GROUP_H;
-        }
+            GROUP_H
+        };
+
+        // Update animated heights
+        let entry = state.node_heights.entry(group.id.clone()).or_insert((GROUP_H, GROUP_H));
+        entry.1 = target_h; // set target
+        group.h = entry.0;  // use current animated value
     }
 
     // Assign initial positions using topological depth + horizontal spread
@@ -52,7 +52,7 @@ pub fn do_layout(state: &AppState) -> RenderSnapshot {
     for (i, group) in grouped.groups.iter_mut().enumerate() {
         let d = depth[i];
         let col = depth_col.entry(d).or_insert(0);
-        group.x = *col as f32 * (GROUP_W + 60.0);
+        group.x = *col as f32 * (GROUP_W + 20.0);
         group.y = d as f32 * (group.h + GAP_Y);
         *col += 1;
     }
@@ -61,7 +61,19 @@ pub fn do_layout(state: &AppState) -> RenderSnapshot {
     force_layout(&mut grouped.groups, &grouped.edges);
 
     // Build RenderSnapshot
-    build_snapshot(&grouped, graph, state)
+    let snapshot = build_snapshot(&grouped, state);
+    (grouped, snapshot)
+}
+
+/// Lightweight snapshot rebuild: update cached group heights from animation state,
+/// then rebuild RenderSnapshot without re-running grouping or force layout.
+pub fn rebuild_snapshot(grouped: &mut GroupedGraph, state: &AppState) -> RenderSnapshot {
+    for group in &mut grouped.groups {
+        if let Some(&(current_h, _)) = state.node_heights.get(&group.id) {
+            group.h = current_h;
+        }
+    }
+    build_snapshot(grouped, state)
 }
 
 fn force_layout(groups: &mut [GroupNode], edges: &[(usize, usize)]) {
@@ -70,9 +82,9 @@ fn force_layout(groups: &mut [GroupNode], edges: &[(usize, usize)]) {
         return;
     }
 
-    let k_repel = 50000.0f32;
-    let k_attract = 0.01f32;
-    let rest_length = 150.0f32;
+    let k_repel = 8000.0f32;
+    let k_attract = 0.05f32;
+    let rest_length = 80.0f32;
     let damping = 0.85f32;
 
     let mut vx = vec![0.0f32; n];
@@ -155,7 +167,6 @@ fn force_layout(groups: &mut [GroupNode], edges: &[(usize, usize)]) {
 
 fn build_snapshot(
     grouped: &GroupedGraph,
-    graph: &SessionGraph,
     state: &AppState,
 ) -> RenderSnapshot {
     let mut nodes = Vec::new();
@@ -163,93 +174,37 @@ fn build_snapshot(
 
     for group in &grouped.groups {
         let is_selected = state.selected_node.as_ref() == Some(&group.id);
+        let is_expanded = group.expanded;
 
-        if group.kind == NodeKind::Subagent {
-            // Terminal node: dark background, show content stream
-            let terminal_content = if let Some(idx) = graph.node_index.get(&group.id) {
-                let node = &graph.nodes[*idx];
-                if node.content_summary.is_empty() {
-                    group.label.clone()
-                } else {
-                    format!("{}\n{}", group.label, node.content_summary)
-                }
-            } else {
-                group.label.clone()
-            };
-
-            nodes.push(RenderNode {
-                id: group.id.clone(),
-                x: group.x,
-                y: group.y,
-                w: group.w,
-                h: group.h,
-                color: [0.08, 0.08, 0.10, 0.95],
-                text_color: [0, 230, 64, 255],
-                label: terminal_content,
-                is_selected,
-                is_group: false,
-                is_terminal: true,
-                last_update_time: group.last_update_time,
-            });
-        } else if group.expanded {
-            // Group bounding box (translucent background)
-            let mut bg_color = group.kind.color();
-            bg_color[3] = 0.15;
-            nodes.push(RenderNode {
-                id: format!("__group_{}", group.id),
-                x: group.x,
-                y: group.y,
-                w: group.w,
-                h: group.h,
-                color: bg_color,
-                text_color: group.kind.text_color(),
-                label: group.label.clone(),
-                is_selected: false,
-                is_group: true,
-                is_terminal: false,
-                last_update_time: group.last_update_time,
-            });
-
-            // Child nodes stacked vertically inside the group
-            let mut cy = group.y + GROUP_HEADER_H;
-            for child_id in &group.children {
-                if let Some(idx) = graph.node_index.get(child_id) {
-                    let node = &graph.nodes[*idx];
-                    let child_selected = state.selected_node.as_ref() == Some(child_id);
-                    nodes.push(RenderNode {
-                        id: child_id.clone(),
-                        x: group.x + CHILD_INSET,
-                        y: cy,
-                        w: group.w - 2.0 * CHILD_INSET,
-                        h: CHILD_H,
-                        color: node.kind.color(),
-                        text_color: node.kind.text_color(),
-                        label: format_node_label(node),
-                        is_selected: child_selected,
-                        is_group: false,
-                        is_terminal: false,
-                        last_update_time: node.last_update_time,
-                    });
-                    cy += CHILD_H + CHILD_GAP;
-                }
-            }
+        // Terminal styling for subagent groups
+        let (color, text_color, is_terminal) = if group.kind == NodeKind::Subagent {
+            ([0.08, 0.08, 0.10, 0.95], [0u8, 230, 64, 255], true)
         } else {
-            // Collapsed group: single node
-            nodes.push(RenderNode {
-                id: group.id.clone(),
-                x: group.x,
-                y: group.y,
-                w: group.w,
-                h: group.h,
-                color: group.kind.color(),
-                text_color: group.kind.text_color(),
-                label: group.label.clone(),
-                is_selected,
-                is_group: true,
-                is_terminal: false,
-                last_update_time: group.last_update_time,
-            });
-        }
+            (group.kind.color(), group.kind.text_color(), false)
+        };
+
+        // Label: collapsed = short label, expanded = label + content_log
+        let label = if is_expanded && !group.content_log.is_empty() {
+            format!("{}\n{}", group.label, group.content_log)
+        } else {
+            group.label.clone()
+        };
+
+        nodes.push(RenderNode {
+            id: group.id.clone(),
+            x: group.x,
+            y: group.y,
+            w: group.w,
+            h: group.h,
+            color,
+            text_color,
+            label,
+            is_selected,
+            is_group: true,
+            is_terminal,
+            is_expanded,
+            last_update_time: group.last_update_time,
+        });
     }
 
     // Edges between groups
@@ -269,19 +224,5 @@ fn build_snapshot(
         edges,
         camera: state.camera.clone(),
         generation: state.generation,
-    }
-}
-
-fn format_node_label(node: &GraphNode) -> String {
-    if node.content_summary.is_empty() {
-        node.label.clone()
-    } else {
-        let summary = if node.content_summary.len() > 80 {
-            let end = node.content_summary.floor_char_boundary(80);
-            format!("{}...", &node.content_summary[..end])
-        } else {
-            node.content_summary.clone()
-        };
-        format!("{}\n{}", node.label, summary)
     }
 }

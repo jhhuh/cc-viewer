@@ -14,6 +14,8 @@ pub struct GroupNode {
     pub w: f32,
     pub h: f32,
     pub last_update_time: f64,
+    /// Terminal-like content log for in-place expansion.
+    pub content_log: String,
 }
 
 /// Graph of grouped conversation turns.
@@ -117,6 +119,41 @@ fn flush_group(
         node_to_group.insert(child_id.clone(), group_idx);
     }
 
+    // Build content_log from children's content summaries
+    let mut content_log = String::new();
+    for child_id in &children {
+        if let Some(idx) = graph.node_index.get(child_id) {
+            let node = &graph.nodes[*idx];
+            let prefix = match node.kind {
+                NodeKind::User => ">>> ",
+                NodeKind::Assistant => "",
+                NodeKind::ToolUse => {
+                    let tool = node.label.strip_prefix("Tool: ").unwrap_or(&node.label);
+                    content_log.push_str(&format!("$ {}\n", tool));
+                    if !node.content_summary.is_empty() {
+                        content_log.push_str(&node.content_summary);
+                        content_log.push('\n');
+                    }
+                    continue;
+                }
+                NodeKind::ToolResult => "  <- ",
+                NodeKind::Subagent => "@ ",
+                _ => "",
+            };
+            if !node.content_summary.is_empty() {
+                content_log.push_str(prefix);
+                content_log.push_str(&node.content_summary);
+                content_log.push('\n');
+            }
+        }
+    }
+    // Truncate to ~3000 chars
+    if content_log.len() > 3000 {
+        let end = content_log.floor_char_boundary(3000);
+        content_log.truncate(end);
+        content_log.push_str("\n...");
+    }
+
     groups.push(GroupNode {
         id: id.clone(),
         label,
@@ -128,6 +165,7 @@ fn flush_group(
         w: 0.0,
         h: 0.0,
         last_update_time: latest_update,
+        content_log,
     });
 }
 

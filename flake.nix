@@ -92,6 +92,7 @@
             overmind
             tmux
             mdbook
+            gh
           ];
 
           nativeBuildInputs = with pkgs; [

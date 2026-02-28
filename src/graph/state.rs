@@ -64,26 +64,22 @@ pub fn handle_input(ui: &mut Ui, rect: Rect, state: &mut AppState, snapshot: &Re
             }
 
             if let Some(node) = hit {
-                if node.is_group {
-                    let group_id = node.id.strip_prefix("__group_")
-                        .unwrap_or(&node.id)
-                        .to_string();
-                    if state.expanded_groups.contains(&group_id) {
-                        state.expanded_groups.remove(&group_id);
-                    } else {
-                        state.expanded_groups.insert(group_id.clone());
-                    }
-                    state.selected_node = Some(group_id);
-                    state.layout_dirty = true;
+                let id = node.id.clone();
+                // Toggle expand/collapse
+                if state.expanded_groups.contains(&id) {
+                    state.expanded_groups.remove(&id);
                 } else {
-                    state.selected_node = Some(node.id.clone());
-                    state.zoom_target = Some(ZoomTarget {
-                        target_x: node.x + node.w / 2.0,
-                        target_y: node.y + node.h / 2.0,
-                        target_zoom: 3.0,
-                        progress: 0.0,
-                    });
+                    state.expanded_groups.insert(id.clone());
                 }
+                state.selected_node = Some(id);
+                state.layout_dirty = true;
+                // Zoom to the clicked node
+                state.zoom_target = Some(ZoomTarget {
+                    target_x: node.x + node.w / 2.0,
+                    target_y: node.y + node.h / 2.0,
+                    target_zoom: 2.0,
+                    progress: 0.0,
+                });
             } else {
                 state.selected_node = None;
             }

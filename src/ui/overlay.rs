@@ -2,7 +2,7 @@ use egui::Context;
 use crate::data::types::*;
 
 /// Draw the left sidebar with session list, filters, and node detail.
-pub fn draw_sidebar(ctx: &Context, state: &mut AppState) {
+pub fn draw_sidebar(ctx: &Context, state: &mut AppState, snapshot: &crate::data::types::RenderSnapshot) {
     egui::SidePanel::left("sidebar")
         .default_width(280.0)
         .resizable(true)
@@ -30,6 +30,8 @@ pub fn draw_sidebar(ctx: &Context, state: &mut AppState) {
                 if ui.selectable_label(is_active, &label).clicked() {
                     state.active_session = Some(sid.clone());
                     state.selected_node = None;
+                    state.layout_dirty = true;
+                    state.needs_center = true;
                 }
             }
 
@@ -39,14 +41,10 @@ pub fn draw_sidebar(ctx: &Context, state: &mut AppState) {
 
             ui.separator();
 
-            // Active session stats
+            // Active session stats (from snapshot, no recomputation)
             if let Some(ref session_id) = state.active_session.clone() {
                 if let Some(graph) = state.sessions.get(session_id) {
-                    let grouped = crate::graph::grouping::group_session(
-                        graph,
-                        &state.expanded_groups,
-                    );
-                    ui.label(format!("Groups: {}", grouped.groups.len()));
+                    ui.label(format!("Groups: {}", snapshot.nodes.len()));
                     ui.label(format!("Nodes: {}", graph.nodes.len()));
                     ui.label(format!("Edges: {}", graph.edges.len()));
                 }

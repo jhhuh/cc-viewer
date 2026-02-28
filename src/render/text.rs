@@ -1,6 +1,6 @@
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping,
-    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport,
+    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
 
 use crate::data::types::RenderSnapshot;
@@ -61,6 +61,7 @@ struct TextAreaInfo {
     node_h: f32,
     text_color: Color,
     is_terminal: bool,
+    is_expanded: bool,
 }
 
 /// Prepare text areas for all visible nodes.
@@ -113,10 +114,14 @@ pub fn prepare_text(
         return;
     }
 
-    let base_font_size = 14.0;
+    let base_font_size = 18.0;
     let font_size = (base_font_size * zoom).clamp(2.0, 80.0);
     let line_height = font_size * 1.3;
     let metrics = Metrics::new(font_size, line_height);
+
+    let term_font_size = (13.0 * zoom).clamp(2.0, 50.0);
+    let term_line_height = term_font_size * 1.2;
+    let term_metrics = Metrics::new(term_font_size, term_line_height);
 
     // Phase 1: Collect info for visible nodes
     let mut infos: Vec<TextAreaInfo> = Vec::new();
@@ -148,18 +153,16 @@ pub fn prepare_text(
             node_h: node.h,
             text_color: Color::rgba(tc[0], tc[1], tc[2], tc[3]),
             is_terminal: node.is_terminal,
+            is_expanded: node.is_expanded,
         });
     }
 
     // Phase 2: Rebuild buffer list to match visible nodes
     let mut new_buffers: Vec<(String, Buffer)> = Vec::with_capacity(infos.len());
 
-    let term_font_size = (10.0 * zoom).clamp(2.0, 40.0);
-    let term_line_height = term_font_size * 1.2;
-    let term_metrics = Metrics::new(term_font_size, term_line_height);
-
     for info in &infos {
-        let m = if info.is_terminal { term_metrics } else { metrics };
+        let is_body = info.is_expanded || info.is_terminal;
+        let m = if is_body { term_metrics } else { metrics };
 
         // Try to reuse existing buffer
         let pos = glyphon.buffers.iter().position(|(id, _)| id == &info.node_id);
@@ -178,10 +181,37 @@ pub fn prepare_text(
             Some((info.node_h - padding).max(10.0)),
         );
 
-        let attrs = Attrs::new().family(Family::Monospace);
-        buffer.set_text(&mut glyphon.font_system, &info.text, attrs, Shaping::Advanced);
-        buffer.shape_until_scroll(&mut glyphon.font_system, false);
+        if info.is_expanded {
+            // Rich text: bold sans-serif title + monospace body
+            let (title, body) = match info.text.split_once('\n') {
+                Some((t, b)) => (t, b),
+                None => (info.text.as_str(), ""),
+            };
+            let title_attrs = Attrs::new()
+                .family(Family::SansSerif)
+                .weight(Weight::BOLD);
+            let body_attrs = Attrs::new().family(Family::Monospace);
 
+            let mut spans: Vec<(&str, Attrs)> = vec![(title, title_attrs)];
+            if !body.is_empty() {
+                spans.push(("\n", body_attrs));
+                spans.push((body, body_attrs));
+            }
+            buffer.set_rich_text(
+                &mut glyphon.font_system,
+                spans,
+                Attrs::new().family(Family::Monospace),
+                Shaping::Advanced,
+            );
+        } else {
+            // Collapsed: bold sans-serif label
+            let attrs = Attrs::new()
+                .family(Family::SansSerif)
+                .weight(Weight::BOLD);
+            buffer.set_text(&mut glyphon.font_system, &info.text, attrs, Shaping::Advanced);
+        }
+
+        buffer.shape_until_scroll(&mut glyphon.font_system, false);
         new_buffers.push((info.node_id.clone(), buffer));
     }
 

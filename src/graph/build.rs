@@ -57,11 +57,6 @@ pub fn add_records_to_graph(graph: &mut SessionGraph, records: &[Record], agent_
                 kind: NodeKind::Subagent,
                 label: format!("Agent: {}", &aid[..aid.len().min(8)]),
                 content_summary: rec.content_summary.clone(),
-                x: 0.0,
-                y: 0.0,
-                w: 220.0,
-                h: 60.0,
-                timestamp: rec.timestamp.clone(),
                 last_update_time: now_secs(),
                 raw: rec.raw.clone(),
             };
@@ -105,11 +100,6 @@ pub fn add_records_to_graph(graph: &mut SessionGraph, records: &[Record], agent_
             kind,
             label,
             content_summary: rec.content_summary.clone(),
-            x: 0.0,
-            y: 0.0,
-            w: 220.0,
-            h: 60.0,
-            timestamp: rec.timestamp.clone(),
             last_update_time: now_secs(),
             raw: rec.raw.clone(),
         };
@@ -140,8 +130,15 @@ pub fn add_records_to_graph(graph: &mut SessionGraph, records: &[Record], agent_
 fn classify_node(rec: &Record) -> NodeKind {
     match rec.record_type {
         RecordType::User => {
-            // Check if it's a tool_result
-            if rec.content_summary.contains("[result]") || rec.content_summary.contains("tool_result") {
+            // Check if it's a tool_result by inspecting message.content array
+            let is_tool_result = rec.raw.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+                .map(|arr| arr.iter().any(|item| {
+                    item.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+                }))
+                .unwrap_or(false);
+            if is_tool_result {
                 NodeKind::ToolResult
             } else {
                 NodeKind::User

@@ -71,13 +71,6 @@ pub struct GraphNode {
     pub kind: NodeKind,
     pub label: String,
     pub content_summary: String,
-    /// Layout position (world space)
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    /// Timestamp for ordering
-    pub timestamp: Option<String>,
     /// Is this node recently active?
     pub last_update_time: f64,
     /// Full content for detail view
@@ -117,6 +110,10 @@ pub struct AppState {
     // Grouping
     pub expanded_groups: HashSet<String>,
     pub generation: u64,
+    /// Animated node heights: id -> (current_h, target_h)
+    pub node_heights: HashMap<String, (f32, f32)>,
+    /// Center camera on first layout
+    pub needs_center: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +146,7 @@ pub struct RenderNode {
     pub is_group: bool,
     /// Subagent nodes render as terminal windows with scrolling content.
     pub is_terminal: bool,
+    pub is_expanded: bool,
     pub last_update_time: f64,
 }
 
@@ -199,6 +197,8 @@ impl Default for AppState {
             zoom_target: None,
             expanded_groups: HashSet::new(),
             generation: 0,
+            node_heights: HashMap::new(),
+            needs_center: true,
         }
     }
 }
