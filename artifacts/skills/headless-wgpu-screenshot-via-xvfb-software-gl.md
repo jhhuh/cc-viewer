@@ -4,36 +4,70 @@
 wgpu apps (eframe, bevy, etc.) can't render in Xvfb by default because Xvfb doesn't provide a Vulkan ICD. The result is a black screen.
 
 ## Solution
-Two environment variables force wgpu to use Mesa's software OpenGL renderer (llvmpipe):
+Three environment variables + correct nix dependencies:
 
 ```bash
-WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1
+WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 MESA_LOADER_DRIVER_OVERRIDE=swrast
+```
+
+## Critical: Mesa Must Be on LD_LIBRARY_PATH
+
+`libGL` in nixpkgs is `libglvnd` — a **dispatcher only**. It has no rendering backend. You MUST also include `mesa` in your library path to provide:
+- `libGLX_mesa.so` — the actual GLX implementation
+- `lib/dri/swrast_dri.so` — the software rasterizer DRI driver
+
+Without `mesa`, `LIBGL_ALWAYS_SOFTWARE=1` has nothing to dispatch to and you get **black screenshots**.
+
+## Nix Flake runtimeLibs
+
+```nix
+runtimeLibs = with pkgs; [
+  libGL      # libglvnd dispatcher
+  mesa       # actual GL implementation + swrast DRI driver
+  # ... other libs (vulkan-loader, libxkbcommon, etc.)
+];
 ```
 
 ## Full Pipeline
 ```bash
-# Nix devShell needs: xvfb-run, xorg.xorgserver, imagemagick
-Xvfb :99 -screen 0 1280x800x24 &
+Xvfb :99 -screen 0 1920x1080x24 &
 sleep 2
-DISPLAY=:99 WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 cargo run &
-sleep 6
-DISPLAY=:99 import -window root screenshot.png
+
+export DISPLAY=:99
+export WGPU_BACKEND=gl
+export LIBGL_ALWAYS_SOFTWARE=1
+export MESA_LOADER_DRIVER_OVERRIDE=swrast
+
+my-wgpu-app &
+sleep 12  # enough time for data loading + first render
+
+import -window root screenshot.png  # ImageMagick X11 capture
 ```
 
 ## Why It Works
 - `WGPU_BACKEND=gl` — tells wgpu to skip Vulkan and use the OpenGL/GLES backend
-- `LIBGL_ALWAYS_SOFTWARE=1` — tells Mesa to use llvmpipe (CPU-based GL rasterizer)
+- `LIBGL_ALWAYS_SOFTWARE=1` — tells libglvnd+Mesa to use software rendering
+- `MESA_LOADER_DRIVER_OVERRIDE=swrast` — explicitly selects the swrast DRI driver
+- `mesa` provides `libGLX_mesa.so` (GLX impl) and `swrast_dri.so` (software rasterizer)
 - Xvfb provides a virtual X11 framebuffer with GLX support
-- Mesa llvmpipe handles the actual GL draw calls in software
 - ImageMagick `import -window root` captures the X11 root window
 
 ## Nix Dependencies
+
+For the screenshot script wrapper:
 ```nix
-buildInputs = [ xvfb-run xorg.xorgserver imagemagick ];
+take-screenshots = pkgs.writeShellScriptBin "screenshots" ''
+  export PATH="${pkgs.lib.makeBinPath [
+    my-app pkgs.xorg.xorgserver pkgs.xdotool pkgs.imagemagick pkgs.coreutils
+  ]}:$PATH"
+  export LD_LIBRARY_PATH="${runtimeLibPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  exec ${./scripts/screenshots.sh}
+'';
 ```
 
 ## Gotchas
-- The app needs enough sleep time to load data and render at least one frame
-- `import -window root` captures the entire virtual screen; use `-window <id>` with xdotool for a specific window
-- eframe logs "Using wgpu" even with GL backend — this is correct, wgpu wraps GL
-- Don't run on the host display (:0) from a sandbox — use Xvfb on a separate display number
+- **Black screenshots**: Almost always means Mesa is missing from `LD_LIBRARY_PATH`. The app window will exist (xdotool finds it) but no pixels render.
+- The app needs enough sleep time to load data and render — 12s is safe for data-heavy apps.
+- `import -window root` captures the entire virtual screen; use xdotool for interactions.
+- 1920x1080 gives high-quality screenshots; 1280x800 is fine for smaller demos.
+- This approach works outside sandboxed environments (CI, nix flake apps) — the sandbox may have Mesa pre-loaded.

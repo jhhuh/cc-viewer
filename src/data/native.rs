@@ -9,6 +9,7 @@ use super::{DataEvent, DataSource};
 /// Native data source with inotify-based file watching.
 pub struct NativeSource {
     initial_done: bool,
+    all_projects: bool,
     /// File byte offsets for incremental tailing
     offsets: HashMap<PathBuf, u64>,
     /// Channel for notify events
@@ -20,7 +21,7 @@ pub struct NativeSource {
 }
 
 impl NativeSource {
-    pub fn new() -> Self {
+    pub fn new(all_projects: bool) -> Self {
         let (tx, rx) = crossbeam_channel::unbounded();
 
         let tx_clone: Sender<notify::Result<Event>> = tx;
@@ -55,6 +56,7 @@ impl NativeSource {
 
         Self {
             initial_done: false,
+            all_projects,
             offsets: HashMap::new(),
             rx,
             _watcher: watcher,
@@ -65,15 +67,26 @@ impl NativeSource {
     fn scan_initial(&mut self) -> Vec<DataEvent> {
         let mut events = Vec::new();
         let projects_dir = projects_path();
-        let runtime_dir = runtime_path();
 
-        // Only load sessions for projects that have an active runtime dir entry
-        if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let project_dir = Path::new(&projects_dir).join(&name);
-                if project_dir.is_dir() {
-                    self.scan_project_dir(&project_dir, &mut events);
+        if self.all_projects {
+            // Load all projects
+            if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        self.scan_project_dir(&entry.path(), &mut events);
+                    }
+                }
+            }
+        } else {
+            // Only load sessions for projects that have an active runtime dir entry
+            let runtime_dir = runtime_path();
+            if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let project_dir = Path::new(&projects_dir).join(&name);
+                    if project_dir.is_dir() {
+                        self.scan_project_dir(&project_dir, &mut events);
+                    }
                 }
             }
         }

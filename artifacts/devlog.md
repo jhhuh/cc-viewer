@@ -87,3 +87,25 @@
 - **Fix**: Cached `GroupedGraph` in `App` struct. Full layout (grouping + force sim) only runs on data events or expand/collapse toggle. During animation, only heights are updated on cached groups and snapshot is rebuilt — no force sim.
 - **Also**: Removed redundant `group_session()` call in sidebar; sidebar now reads group count from snapshot.
 - **Also**: Removed dead `GraphNode.{x,y,w,h,timestamp}` fields (made obsolete by grouping system).
+
+## 2026-02-28: Linear layout, --all flag, headless screenshots
+
+### Layout change
+- **Replaced force-directed layout with vertical stack**: Claude Code sessions are linear streams, not graphs. Force layout (O(n²), 80 iterations) produced tangled results. Replaced with 4-line vertical stack: `group.y = cumulative_height + gap`. O(n), deterministic.
+- `rebuild_snapshot()` also restacks y-positions during animation.
+
+### `--all` CLI flag
+- `cc-viewer --all` scans ALL projects in `~/.claude/projects/`, not just those with active runtime entries.
+- Auto-enables `show_inactive = true` for full browsing.
+
+### Headless screenshot pipeline
+- Added `nix run .#screenshots` app: Xvfb + xdotool + ImageMagick `import`.
+- Script: starts Xvfb (1920x1080), launches cc-viewer --all, waits 12s, takes 5 screenshots via xdotool interactions + `import -window root`.
+- **Key fix: Mesa for software GL**: `libglvnd` (`libGL` in nixpkgs) is just a dispatcher — it has no rendering backend. Adding `mesa` to `runtimeLibs` provides `libGLX_mesa.so` and `swrast_dri.so`, enabling `LIBGL_ALWAYS_SOFTWARE=1` to work.
+- Also needed: `MESA_LOADER_DRIVER_OVERRIDE=swrast` to force swrast DRI driver.
+- Camera auto-center: raised min zoom from 0.1 to 0.4, show top of session when too tall to fit vertically.
+
+### Documentation
+- README.md with 5 annotated screenshots (paths: `docs/src/images/*.png`).
+- mdbook docs: introduction, graph guide, getting started, layout internals.
+- `nix run .#docs` serves at localhost:3000.

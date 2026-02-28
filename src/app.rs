@@ -15,7 +15,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, all_projects: bool) -> Self {
         let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("wgpu not enabled");
 
         // Initialize persistent GPU resources (pipeline, camera buffer)
@@ -24,10 +24,14 @@ impl App {
         // Initialize glyphon persistent state
         crate::render::text::GlyphonState::init(wgpu_render_state);
 
-        let source = data::native::NativeSource::new();
+        let source = data::native::NativeSource::new(all_projects);
+        let mut state = AppState::default();
+        if all_projects {
+            state.show_inactive = true;
+        }
 
         Self {
-            state: AppState::default(),
+            state,
             source: Box::new(source),
             snapshot: RenderSnapshot::default(),
             cached_groups: None,
@@ -151,14 +155,24 @@ fn center_camera(state: &mut AppState, snapshot: &RenderSnapshot, ctx: &egui::Co
 
     let zoom_x = vw / (graph_w * 1.2);
     let zoom_y = vh / (graph_h * 1.2);
-    let zoom = zoom_x.min(zoom_y).clamp(0.1, 2.0);
+    let zoom = zoom_x.min(zoom_y).clamp(0.4, 2.0);
 
+    // If the session is too tall to fit, show the top instead of centering
     let cx = (min_x + max_x) / 2.0;
-    let cy = (min_y + max_y) / 2.0;
+    let fits_vertically = graph_h * zoom * 1.2 <= vh;
+    let cy = if fits_vertically {
+        (min_y + max_y) / 2.0
+    } else {
+        min_y + vh / (2.0 * zoom)
+    };
 
     state.camera.zoom = zoom;
     state.camera.offset_x = vw / 2.0 - cx * zoom;
-    state.camera.offset_y = vh / 2.0 - cy * zoom;
+    state.camera.offset_y = if fits_vertically {
+        vh / 2.0 - cy * zoom
+    } else {
+        20.0 - min_y * zoom  // small top padding
+    };
     state.needs_center = false;
 }
 

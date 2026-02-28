@@ -7,6 +7,8 @@ mod ui;
 fn main() {
     env_logger::init();
 
+    let all_projects = std::env::args().any(|a| a == "--all");
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
@@ -17,7 +19,7 @@ fn main() {
     eframe::run_native(
         "cc-viewer",
         native_options,
-        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, all_projects)))),
     )
     .expect("Failed to start eframe");
 }

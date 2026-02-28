@@ -14,6 +14,7 @@
           libxkbcommon
           wayland
           libGL
+          mesa
           libx11
           libxcursor
           libxi
@@ -63,6 +64,18 @@
           echo "Serving docs at http://localhost:3000"
           ${pkgs.python3}/bin/python3 -m http.server 3000 -b 127.0.0.1 -d ${docs}
         '';
+
+        take-screenshots = pkgs.writeShellScriptBin "cc-viewer-screenshots" ''
+          export PATH="${pkgs.lib.makeBinPath [
+            cc-viewer
+            pkgs.xorg.xorgserver
+            pkgs.xdotool
+            pkgs.imagemagick
+            pkgs.coreutils
+          ]}:$PATH"
+          export LD_LIBRARY_PATH="${runtimeLibPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec ${./scripts/screenshots.sh}
+        '';
       in {
         packages = {
           default = cc-viewer;
@@ -78,6 +91,10 @@
           docs = {
             type = "app";
             program = "${serve-docs}/bin/cc-viewer-docs";
+          };
+          screenshots = {
+            type = "app";
+            program = "${take-screenshots}/bin/cc-viewer-screenshots";
           };
         };
 
